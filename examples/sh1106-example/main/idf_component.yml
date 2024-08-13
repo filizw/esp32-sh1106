@@ -1,0 +1,3 @@
+dependencies:
+  sh1106:
+    path: ../../../components/sh1106

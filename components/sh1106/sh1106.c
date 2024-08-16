@@ -89,3 +89,55 @@ esp_err_t sh1106_send_command_with_byte(const sh1106_handle_t handle, const uint
 
     return ESP_OK;
 }
+
+esp_err_t sh1106_set_page_address(const sh1106_handle_t handle, const uint8_t address)
+{
+    if(handle == NULL || address >= (handle->display_height >> 3))
+        return ESP_ERR_INVALID_ARG;
+
+    return sh1106_send_command(handle, SH1106_COMMAND_SETPAGEADDR | (address & 0x0F));
+}
+
+esp_err_t sh1106_set_column_address(const sh1106_handle_t handle, const uint8_t address)
+{
+    if(handle == NULL || address >= handle->display_width)
+        return ESP_ERR_INVALID_ARG;
+
+    esp_err_t err;
+    if((err = sh1106_send_command(handle, SH1106_COMMAND_SETLOWCOLADDR | (address & 0x0F))))
+        return err;
+    
+    if((err = sh1106_send_command(handle, SH1106_COMMAND_SETHIGHCOLADDR | ((address & 0x7F) >> 4))))
+        return err;
+    
+    return ESP_OK;
+}
+
+esp_err_t sh1106_write_byte(const sh1106_handle_t handle, const uint8_t byte)
+{
+    if(handle == NULL)
+        return ESP_ERR_INVALID_ARG;
+    
+    const uint8_t buffer[2] = {0x40, byte};
+    i2c_master_transmit(handle->i2c_dev_handle, buffer, sizeof(buffer), -1);
+
+    return ESP_OK;
+}
+
+esp_err_t sh1106_clear(const sh1106_handle_t handle, const uint8_t color)
+{
+    if(handle == NULL)
+        return ESP_ERR_INVALID_ARG;
+    
+    for(uint8_t page_addr = 0; page_addr < (handle->display_height >> 3); page_addr++)
+    {
+        sh1106_set_page_address(handle, page_addr);
+        sh1106_set_column_address(handle, 0x02);
+
+        sh1106_send_command(handle, SH1106_COMMAND_RMWSTART);
+        for(uint8_t col = 0; col < handle->display_width; col++) sh1106_write_byte(handle, color);
+        sh1106_send_command(handle, SH1106_COMMAND_RMWEND);
+    }
+
+    return ESP_OK;
+}

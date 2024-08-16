@@ -19,6 +19,9 @@ void app_main(void)
 
     while(true)
     {
-        vTaskDelay(pdMS_TO_TICKS(100));
+        sh1106_clear(handle, 0x00);
+        vTaskDelay(pdMS_TO_TICKS(3000));
+        sh1106_clear(handle, 0xFF);
+        vTaskDelay(pdMS_TO_TICKS(3000));
     }
 }

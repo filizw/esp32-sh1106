@@ -1,7 +1,10 @@
 #include "sh1106.h"
 
 #define SH1106_I2C_ADDR 0x3C
-#define SH1106_I2C_SCL_SPEED 100000
+#define SH1106_I2C_SCL_SPEED 400000
+
+#define CLEAR_PAGE 0
+#define WRITE_PAGE 1
 
 struct sh1106_t
 {
@@ -10,15 +13,21 @@ struct sh1106_t
 
     uint8_t display_width;
     uint8_t display_height;
+
+    uint8_t *frame_buffer;
 };
 
-esp_err_t sh1106_init(sh1106_handle_t *handle, const sh1106_config_t *const config)
+esp_err_t sh1106_init(sh1106_handle_t *const handle, const sh1106_config_t *const config)
 {
     if(handle == NULL || config == NULL)
         return ESP_ERR_INVALID_ARG;
     
     *handle = malloc(sizeof(struct sh1106_t));
     if(*handle == NULL)
+        return ESP_ERR_NO_MEM;
+    
+    (*handle)->frame_buffer = calloc(config->display_width*config->display_height, sizeof(uint8_t));
+    if((*handle)->frame_buffer == NULL)
         return ESP_ERR_NO_MEM;
     
     (*handle)->display_width = config->display_width;
@@ -54,7 +63,7 @@ esp_err_t sh1106_init(sh1106_handle_t *handle, const sh1106_config_t *const conf
     return ESP_OK;
 }
 
-esp_err_t sh1106_deinit(sh1106_handle_t *handle)
+esp_err_t sh1106_deinit(sh1106_handle_t *const handle)
 {
     if(handle == NULL || *handle == NULL)
         return ESP_ERR_INVALID_ARG;
@@ -62,6 +71,8 @@ esp_err_t sh1106_deinit(sh1106_handle_t *handle)
     i2c_master_bus_rm_device((*handle)->i2c_dev_handle);
     i2c_del_master_bus((*handle)->i2c_bus_handle);
 
+    free((*handle)->frame_buffer);
+    (*handle)->frame_buffer = NULL;
     free(*handle);
     *handle = NULL;
 
@@ -124,7 +135,26 @@ esp_err_t sh1106_write_byte(const sh1106_handle_t handle, const uint8_t byte)
     return ESP_OK;
 }
 
-esp_err_t sh1106_clear(const sh1106_handle_t handle, const uint8_t color)
+esp_err_t sh1106_write_data(const sh1106_handle_t handle, const uint8_t *const data, size_t data_size)
+{
+     if(handle == NULL || data == NULL)
+        return ESP_ERR_INVALID_ARG;
+    
+    uint8_t *buffer = calloc(data_size + 1, sizeof(uint8_t));
+    if(buffer == NULL)
+        return ESP_ERR_NO_MEM;
+    
+    buffer[0] = 0x40;
+    memcpy(buffer + 1, data, data_size);
+
+    i2c_master_transmit(handle->i2c_dev_handle, buffer, data_size + 1, -1);
+
+    free(buffer);
+
+    return ESP_OK;   
+}
+
+esp_err_t sh1106_write_memory(const sh1106_handle_t handle)
 {
     if(handle == NULL)
         return ESP_ERR_INVALID_ARG;
@@ -135,9 +165,20 @@ esp_err_t sh1106_clear(const sh1106_handle_t handle, const uint8_t color)
         sh1106_set_column_address(handle, 0x02);
 
         sh1106_send_command(handle, SH1106_COMMAND_RMWSTART);
-        for(uint8_t col = 0; col < handle->display_width; col++) sh1106_write_byte(handle, color);
+        sh1106_write_data(handle, handle->frame_buffer + handle->display_width*page_addr, handle->display_width);
         sh1106_send_command(handle, SH1106_COMMAND_RMWEND);
     }
+
+    return ESP_OK;
+}
+
+esp_err_t sh1106_clear(const sh1106_handle_t handle, const uint8_t color)
+{
+    if(handle == NULL)
+        return ESP_ERR_INVALID_ARG;
+    
+    memset(handle->frame_buffer, color, handle->display_width*handle->display_height);
+    sh1106_write_memory(handle);
 
     return ESP_OK;
 }

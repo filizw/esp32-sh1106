@@ -24,4 +24,6 @@ void app_main(void)
         sh1106_clear(handle, 0xFF);
         vTaskDelay(pdMS_TO_TICKS(3000));
     }
+
+    sh1106_deinit(&handle);
 }

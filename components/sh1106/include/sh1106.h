@@ -2,6 +2,7 @@
 #include "driver/i2c_master.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include <string.h>
 
 #define SH1106_COMMAND_SETLOWCOLADDR 0x00
 #define SH1106_COMMAND_SETHIGHCOLADDR 0x10
@@ -37,9 +38,9 @@ typedef struct
     uint8_t display_height;
 } sh1106_config_t;
 
-esp_err_t sh1106_init(sh1106_handle_t *handle, const sh1106_config_t *const config);
+esp_err_t sh1106_init(sh1106_handle_t *const handle, const sh1106_config_t *const config);
 
-esp_err_t sh1106_deinit(sh1106_handle_t *handle);
+esp_err_t sh1106_deinit(sh1106_handle_t *const handle);
 
 esp_err_t sh1106_send_command(const sh1106_handle_t handle, const uint8_t command);
 
@@ -50,5 +51,9 @@ esp_err_t sh1106_set_page_address(const sh1106_handle_t handle, const uint8_t ad
 esp_err_t sh1106_set_column_address(const sh1106_handle_t handle, const uint8_t address);
 
 esp_err_t sh1106_write_byte(const sh1106_handle_t handle, const uint8_t byte);
+
+esp_err_t sh1106_write_data(const sh1106_handle_t handle, const uint8_t *const data, size_t data_size);
+
+esp_err_t sh1106_write_memory(const sh1106_handle_t handle);
 
 esp_err_t sh1106_clear(const sh1106_handle_t handle, const uint8_t color);

@@ -16,12 +16,25 @@ void app_main(void)
     };
 
     sh1106_init(&handle, &config);
+    sh1106_clear(handle, 0x00);
+
+    sh1106_draw_character(handle, 0, 0, 'a', &sh1106_font5x7);
+    sh1106_draw_character(handle, 6, 0, 'b', &sh1106_font5x7);
+    sh1106_draw_character(handle, 12, 0, 'c', &sh1106_font5x7);
+    sh1106_draw_character(handle, 18, 0, 'd', &sh1106_font5x7);
+
+    sh1106_draw_character(handle, 24, 4, '1', &sh1106_font5x7);
+    sh1106_draw_character(handle, 30, 4, '2', &sh1106_font5x7);
+    sh1106_draw_character(handle, 36, 4, '3', &sh1106_font5x7);
+
+    sh1106_draw_character(handle, 24, 12, 'A', &sh1106_font5x7);
+    sh1106_draw_character(handle, 30, 12, 'A', &sh1106_font5x7);
+    //sh1106_draw_character(handle, 30, 12, 'T', &sh1106_font5x7);
+
+    sh1106_write_memory(handle);
 
     while(true)
     {
-        sh1106_clear(handle, 0x00);
-        vTaskDelay(pdMS_TO_TICKS(3000));
-        sh1106_clear(handle, 0xFF);
         vTaskDelay(pdMS_TO_TICKS(3000));
     }
 

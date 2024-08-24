@@ -3,6 +3,8 @@
 #define SH1106_I2C_ADDR 0x3C
 #define SH1106_I2C_SCL_SPEED 400000
 
+#define DISP_RES_128x64 SH1106_DISP_WIDTH * SH1106_DISP_HEIGHT
+
 #define CLEAR_PAGE 0
 #define WRITE_PAGE 1
 
@@ -205,39 +207,16 @@ const sh1106_font_t sh1106_font5x7 = {
     .font = font5x7
 };
 
-static uint8_t buffer[SH1106_RESOLUTION_128x64] = {0};
+static bool is_init = false;
+static i2c_master_dev_handle_t i2c_dev_handle;
+static uint8_t buffer[DISP_RES_128x64] = {0};
 
-struct sh1106_t
+esp_err_t sh1106_init(i2c_master_bus_handle_t *i2c_bus_handle)
 {
-    i2c_master_bus_handle_t i2c_bus_handle;
-    i2c_master_dev_handle_t i2c_dev_handle;
-
-    uint8_t display_width;
-    uint8_t display_height;
-};
-
-esp_err_t sh1106_init(sh1106_handle_t *const handle, const sh1106_config_t *const config)
-{
-    if(handle == NULL || config == NULL)
+    if(i2c_bus_handle == NULL)
         return ESP_ERR_INVALID_ARG;
-    
-    *handle = malloc(sizeof(struct sh1106_t));
-    if(*handle == NULL)
-        return ESP_ERR_NO_MEM;
-    
-    (*handle)->display_width = config->display_width;
-    (*handle)->display_height = config->display_height;
 
-    i2c_master_bus_config_t i2c_bus_config = {
-        .clk_source = I2C_CLK_SRC_DEFAULT,
-        .i2c_port = config->i2c_port,
-        .scl_io_num = config->i2c_scl,
-        .sda_io_num = config->i2c_sda,
-        .glitch_ignore_cnt = 7,
-        .flags.enable_internal_pullup = true
-    };
-
-    i2c_new_master_bus(&i2c_bus_config, &((*handle)->i2c_bus_handle));
+    is_init = true;
 
     i2c_device_config_t i2c_dev_config = {
         .dev_addr_length = I2C_ADDR_BIT_LEN_7,
@@ -245,144 +224,126 @@ esp_err_t sh1106_init(sh1106_handle_t *const handle, const sh1106_config_t *cons
         .scl_speed_hz = SH1106_I2C_SCL_SPEED
     };
 
-    i2c_master_bus_add_device((*handle)->i2c_bus_handle, &i2c_dev_config, &((*handle)->i2c_dev_handle));
+    i2c_master_bus_add_device(*i2c_bus_handle, &i2c_dev_config, &i2c_dev_handle);
 
-    sh1106_send_command_with_byte(*handle, SH1106_COMMAND_SETCONTRAST, 0x10);
-    sh1106_send_command(*handle, SH1106_COMMAND_SETSTARTLINE);
-    sh1106_send_command(*handle, SH1106_COMMAND_NORMALDISPLAY);
+    sh1106_send_double_cmd(SH1106_CMD_SETCONTRAST, 0x10);
+    sh1106_send_cmd(SH1106_CMD_SETSTARTLINE);
+    sh1106_send_cmd(SH1106_CMD_NORMALDISPLAY);
 
-    sh1106_send_command(*handle, SH1106_COMMAND_SETSEGREMAP | 1);
-    sh1106_send_command(*handle, SH1106_COMMAND_SETOUTPUTSCANDIR | 8);
+    sh1106_send_cmd(SH1106_CMD_SETSEGREMAP | 1);
+    sh1106_send_cmd(SH1106_CMD_SETOUTPUTSCANDIR | 8);
 
     vTaskDelay(pdMS_TO_TICKS(100));
 
-    sh1106_send_command(*handle, SH1106_COMMAND_DISPLAYON);
+    sh1106_send_cmd(SH1106_CMD_DISPLAYON);
 
     return ESP_OK;
 }
 
-esp_err_t sh1106_deinit(sh1106_handle_t *const handle)
+esp_err_t sh1106_deinit(void)
 {
-    if(handle == NULL || *handle == NULL)
-        return ESP_ERR_INVALID_ARG;
+    if(!is_init)
+        return ESP_ERR_INVALID_STATE;
+
+    return i2c_master_bus_rm_device(i2c_dev_handle);
+}
+
+esp_err_t sh1106_send_cmd(uint8_t cmd)
+{
+    if(!is_init)
+        return ESP_ERR_INVALID_VERSION;
     
-    i2c_master_bus_rm_device((*handle)->i2c_dev_handle);
-    i2c_del_master_bus((*handle)->i2c_bus_handle);
-
-    free(*handle);
-    *handle = NULL;
-
-    return ESP_OK;
+    const uint8_t buf[2] = {0x00, cmd};
+    return i2c_master_transmit(i2c_dev_handle, buf, sizeof(buf), -1);
 }
 
-esp_err_t sh1106_send_command(const sh1106_handle_t handle, const uint8_t command)
+esp_err_t sh1106_send_double_cmd(uint8_t cmd1, uint8_t cmd2)
 {
-    if(handle == NULL)
-        return ESP_ERR_INVALID_ARG;
+    if(!is_init)
+        return ESP_ERR_INVALID_STATE;
     
-    const uint8_t buf[2] = {0x00, command};
-    i2c_master_transmit(handle->i2c_dev_handle, buf, sizeof(buf), -1);
-
-    return ESP_OK;
+    const uint8_t buf[4] = {0x80, cmd1, 0x00, cmd2};
+    return i2c_master_transmit(i2c_dev_handle, buf, sizeof(buf), -1);
 }
 
-esp_err_t sh1106_send_command_with_byte(const sh1106_handle_t handle, const uint8_t command, const uint8_t byte)
+esp_err_t sh1106_set_page_addr(uint8_t addr)
 {
-    if(handle == NULL)
-        return ESP_ERR_INVALID_ARG;
-    
-    const uint8_t buf[4] = {0x80, command, 0x00, byte};
-    i2c_master_transmit(handle->i2c_dev_handle, buf, sizeof(buf), -1);
-
-    return ESP_OK;
-}
-
-esp_err_t sh1106_set_page_address(const sh1106_handle_t handle, const uint8_t address)
-{
-    if(handle == NULL || address >= (handle->display_height >> 3))
+    if(addr >= (SH1106_DISP_HEIGHT >> 3))
         return ESP_ERR_INVALID_ARG;
 
-    return sh1106_send_command(handle, SH1106_COMMAND_SETPAGEADDR | (address & 0x0F));
+    return sh1106_send_cmd(SH1106_CMD_SETPAGEADDR | (addr & 0x0F));
 }
 
-esp_err_t sh1106_set_column_address(const sh1106_handle_t handle, const uint8_t address)
+esp_err_t sh1106_set_col_addr(uint8_t addr)
 {
-    if(handle == NULL || address >= handle->display_width)
+    if(addr >= SH1106_DISP_WIDTH)
         return ESP_ERR_INVALID_ARG;
 
     esp_err_t err;
-    if((err = sh1106_send_command(handle, SH1106_COMMAND_SETLOWCOLADDR | (address & 0x0F))))
+    if((err = sh1106_send_cmd(SH1106_CMD_SETLOWCOLADDR | (addr & 0x0F))))
         return err;
     
-    if((err = sh1106_send_command(handle, SH1106_COMMAND_SETHIGHCOLADDR | ((address & 0x7F) >> 4))))
+    if((err = sh1106_send_cmd(SH1106_CMD_SETHIGHCOLADDR | ((addr >> 4) & 0x0F))))
         return err;
     
     return ESP_OK;
 }
 
-esp_err_t sh1106_write_byte(const sh1106_handle_t handle, const uint8_t byte)
+esp_err_t sh1106_write_data(const uint8_t *const data, size_t size)
 {
-    if(handle == NULL)
+    if(data == NULL)
         return ESP_ERR_INVALID_ARG;
     
-    const uint8_t buf[2] = {0x40, byte};
-    i2c_master_transmit(handle->i2c_dev_handle, buf, sizeof(buf), -1);
-
-    return ESP_OK;
-}
-
-esp_err_t sh1106_write_data(const sh1106_handle_t handle, const uint8_t *const data, size_t data_size)
-{
-     if(handle == NULL || data == NULL)
-        return ESP_ERR_INVALID_ARG;
-    
-    uint8_t *buf = calloc(data_size + 1, sizeof(uint8_t));
+    uint8_t *buf = calloc(size + 1, sizeof(uint8_t));
     if(buf == NULL)
         return ESP_ERR_NO_MEM;
     
     buf[0] = 0x40;
-    memcpy(buf + 1, data, data_size);
+    memcpy(buf + 1, data, size);
 
-    i2c_master_transmit(handle->i2c_dev_handle, buf, data_size + 1, -1);
+    i2c_master_transmit(i2c_dev_handle, buf, size + 1, -1);
 
     free(buf);
 
     return ESP_OK;   
 }
 
-esp_err_t sh1106_write_memory(const sh1106_handle_t handle)
+esp_err_t sh1106_cpy_buf_to_disp(void)
 {
-    if(handle == NULL)
-        return ESP_ERR_INVALID_ARG;
-    
-    for(uint8_t page_addr = 0; page_addr < (handle->display_height >> 3); page_addr++)
-    {
-        sh1106_set_page_address(handle, page_addr);
-        sh1106_set_column_address(handle, 0x02);
+    if(!is_init)
+        return ESP_ERR_INVALID_STATE;
 
-        sh1106_send_command(handle, SH1106_COMMAND_RMWSTART);
-        sh1106_write_data(handle, buffer + handle->display_width*page_addr, handle->display_width);
-        sh1106_send_command(handle, SH1106_COMMAND_RMWEND);
+    for(uint8_t page_addr = 0; page_addr < (SH1106_DISP_HEIGHT >> 3); page_addr++)
+    {
+        sh1106_set_page_addr(page_addr);
+        sh1106_set_col_addr(0x02);
+
+        sh1106_send_cmd(SH1106_CMD_RMWSTART);
+        sh1106_write_data(buffer + SH1106_DISP_WIDTH * page_addr, SH1106_DISP_WIDTH);
+        sh1106_send_cmd(SH1106_CMD_RMWEND);
     }
 
     return ESP_OK;
 }
 
-esp_err_t sh1106_clear(const sh1106_handle_t handle, const uint8_t color)
+void sh1106_buf_clear(void)
 {
-    if(handle == NULL)
-        return ESP_ERR_INVALID_ARG;
-    
-    memset(buffer, color, handle->display_width*handle->display_height);
-    sh1106_write_memory(handle);
-
-    return ESP_OK;
+    memset(buffer, 0, DISP_RES_128x64);
 }
 
-esp_err_t sh1106_draw_character(const sh1106_handle_t handle, uint8_t x, uint8_t y, char c, const sh1106_font_t *const font)
+void sh1106_buf_set_pixel(uint8_t x, uint8_t y)
 {
-    if(handle == NULL || font == NULL)
-        return ESP_ERR_NO_MEM;
+    if(x >= SH1106_DISP_WIDTH)
+        x = SH1106_DISP_WIDTH - 1;
+    
+    if(y >= SH1106_DISP_HEIGHT)
+        y = SH1106_DISP_HEIGHT - 1;
+}
+
+esp_err_t sh1106_buf_set_char(uint8_t x, uint8_t y, char c, const sh1106_font_t *const font)
+{
+    if(font == NULL)
+        return ESP_ERR_INVALID_ARG;
     
     if(c < 32 || c > 126)
         c = 32;
@@ -402,13 +363,13 @@ esp_err_t sh1106_draw_character(const sh1106_handle_t handle, uint8_t x, uint8_t
             else
                 byte = font->font[col + num_of_cols*((c - 32)*num_of_pages + page)] << (y % 8);
             
-            data[col + num_of_cols * page] = buffer[x + col + handle->display_width * ((y >> 3) + page)] | byte;
+            data[col + num_of_cols * page] = buffer[x + col + SH1106_DISP_WIDTH * ((y >> 3) + page)] | byte;
         }
     }
 
     for(uint8_t page = 0; page <= num_of_pages; page++)
     {
-        memcpy(buffer + x + handle->display_width * ((y >> 3) + page), data + num_of_cols * page, num_of_cols);
+        memcpy(buffer + x + SH1106_DISP_WIDTH * ((y >> 3) + page), data + num_of_cols * page, num_of_cols);
     }
 
     free(data);
@@ -416,7 +377,7 @@ esp_err_t sh1106_draw_character(const sh1106_handle_t handle, uint8_t x, uint8_t
     return ESP_OK;
 }
 
-esp_err_t sh1106_draw_text(const sh1106_handle_t handle, const char *const text)
+esp_err_t sh1106_buf_set_text(const char *const text)
 {
     return ESP_OK;
 }

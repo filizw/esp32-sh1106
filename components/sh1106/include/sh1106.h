@@ -44,7 +44,7 @@ typedef struct
 
 extern const sh1106_font_t sh1106_font5x7;
 
-esp_err_t sh1106_init(i2c_master_bus_handle_t *i2c_bus_handle);
+esp_err_t sh1106_init(i2c_master_bus_handle_t i2c_bus_handle);
 
 esp_err_t sh1106_deinit(void);
 
@@ -62,8 +62,10 @@ esp_err_t sh1106_cpy_buf_to_disp(void);
 
 void sh1106_buf_clear(void);
 
-void sh1106_buf_set_pixel(uint8_t x, uint8_t y);
+void sh1106_buf_set_pixel_on(uint8_t x, uint8_t y);
+
+void sh1106_buf_set_pixel_off(uint8_t x, uint8_t y);
 
 esp_err_t sh1106_buf_set_char(uint8_t x, uint8_t y, char c, const sh1106_font_t *const font);
 
-esp_err_t sh1106_buf_set_text(const char *const text);
+esp_err_t sh1106_buf_set_text(uint8_t x, uint8_t y, const char *text, const sh1106_font_t *const font);

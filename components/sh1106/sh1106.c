@@ -211,7 +211,7 @@ static bool is_init = false;
 static i2c_master_dev_handle_t i2c_dev_handle;
 static uint8_t buffer[DISP_RES_128x64] = {0};
 
-esp_err_t sh1106_init(i2c_master_bus_handle_t *i2c_bus_handle)
+esp_err_t sh1106_init(i2c_master_bus_handle_t i2c_bus_handle)
 {
     if(i2c_bus_handle == NULL)
         return ESP_ERR_INVALID_ARG;
@@ -224,7 +224,7 @@ esp_err_t sh1106_init(i2c_master_bus_handle_t *i2c_bus_handle)
         .scl_speed_hz = SH1106_I2C_SCL_SPEED
     };
 
-    i2c_master_bus_add_device(*i2c_bus_handle, &i2c_dev_config, &i2c_dev_handle);
+    i2c_master_bus_add_device(i2c_bus_handle, &i2c_dev_config, &i2c_dev_handle);
 
     sh1106_send_double_cmd(SH1106_CMD_SETCONTRAST, 0x10);
     sh1106_send_cmd(SH1106_CMD_SETSTARTLINE);
@@ -294,6 +294,9 @@ esp_err_t sh1106_write_data(const uint8_t *const data, size_t size)
     if(data == NULL)
         return ESP_ERR_INVALID_ARG;
     
+    if(size > DISP_RES_128x64)
+        return ESP_ERR_INVALID_SIZE;
+    
     uint8_t *buf = calloc(size + 1, sizeof(uint8_t));
     if(buf == NULL)
         return ESP_ERR_NO_MEM;
@@ -331,13 +334,26 @@ void sh1106_buf_clear(void)
     memset(buffer, 0, DISP_RES_128x64);
 }
 
-void sh1106_buf_set_pixel(uint8_t x, uint8_t y)
+void sh1106_buf_set_pixel_on(uint8_t x, uint8_t y)
 {
     if(x >= SH1106_DISP_WIDTH)
         x = SH1106_DISP_WIDTH - 1;
     
     if(y >= SH1106_DISP_HEIGHT)
         y = SH1106_DISP_HEIGHT - 1;
+    
+    buffer[x + SH1106_DISP_WIDTH * (y >> 3)] |= 1 << (y % 8);
+}
+
+void sh1106_buf_set_pixel_off(uint8_t x, uint8_t y)
+{
+    if(x >= SH1106_DISP_WIDTH)
+        x = SH1106_DISP_WIDTH - 1;
+    
+    if(y >= SH1106_DISP_HEIGHT)
+        y = SH1106_DISP_HEIGHT - 1;
+    
+    buffer[x + SH1106_DISP_WIDTH * (y >> 3)] &= ~(1 << (y % 8));
 }
 
 esp_err_t sh1106_buf_set_char(uint8_t x, uint8_t y, char c, const sh1106_font_t *const font)
@@ -377,7 +393,18 @@ esp_err_t sh1106_buf_set_char(uint8_t x, uint8_t y, char c, const sh1106_font_t 
     return ESP_OK;
 }
 
-esp_err_t sh1106_buf_set_text(const char *const text)
+esp_err_t sh1106_buf_set_text(uint8_t x, uint8_t y, const char *text, const sh1106_font_t *const font)
 {
+    if(text == NULL || font == NULL)
+        return ESP_ERR_INVALID_ARG;
+    
+    while(*text)
+    {
+        sh1106_buf_set_char(x, y, *text, font);
+
+        x += font->width + 1;
+        text++;
+    }
+
     return ESP_OK;
 }

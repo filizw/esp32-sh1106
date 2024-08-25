@@ -21,39 +21,34 @@ void app_main(void)
     i2c_new_master_bus(&i2c_bus_config, &i2c_bus_handle);
 
     sh1106_init(i2c_bus_handle);
-    sh1106_buf_clear();
+    sh1106_inv_x_dir(true);
+    sh1106_inv_y_dir(true);
+    sh1106_clear();
 
-    /*sh1106_buf_set_char(0, 0, 'a', &sh1106_font5x7);
-    sh1106_buf_set_char(6, 0, 'b', &sh1106_font5x7);
-    sh1106_buf_set_char(12, 0, 'c', &sh1106_font5x7);
-    sh1106_buf_set_char(18, 0, 'd', &sh1106_font5x7);
+    sh1106_write_text(10, 16, "HELLO WORLD!", &sh1106_font8x16);
+    sh1106_write_text(50, 40, "(-_-)", &sh1106_font5x7);
+    sh1106_display();
 
-    sh1106_buf_set_char(24, 4, '1', &sh1106_font5x7);
-    sh1106_buf_set_char(30, 4, '2', &sh1106_font5x7);
-    sh1106_buf_set_char(36, 4, '3', &sh1106_font5x7);
-
-    sh1106_buf_set_char(24, 12, 'A', &sh1106_font5x7);
-    sh1106_buf_set_char(30, 12, 'A', &sh1106_font5x7);
-    //sh1106_buf_set_char(30, 12, 'T', &sh1106_font5x7);*/
-
-    sh1106_buf_set_text(10, 30, "hello", &sh1106_font5x7);
-    sh1106_cpy_buf_to_disp();
+    bool rev = false;
 
     while(true)
     {
         for(uint8_t i = 0; i < SH1106_DISP_WIDTH; i += 2)
         {
-            sh1106_buf_set_pixel_on(i, 10);
+            sh1106_set_pixel(i, 10, SH1106_PIXEL_ON);
             
             if(i >= 10)
-                sh1106_buf_set_pixel_off(i - 10, 10);
+                sh1106_set_pixel(i - 10, 10, SH1106_PIXEL_OFF);
             else
-                sh1106_buf_set_pixel_off(SH1106_DISP_WIDTH + i - 10, 10);
+                sh1106_set_pixel(SH1106_DISP_WIDTH + i - 10, 10, SH1106_PIXEL_OFF);
             
-            sh1106_cpy_buf_to_disp();
+            sh1106_display();
 
             vTaskDelay(pdMS_TO_TICKS(100));
         }
+
+        rev = !rev;
+        sh1106_reverse(rev);
     }
 
     sh1106_deinit();

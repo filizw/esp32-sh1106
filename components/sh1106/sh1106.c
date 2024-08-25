@@ -369,32 +369,6 @@ void sh1106_clear(void)
     }
 }
 
-void sh1106_set_pixel_on(uint8_t x, uint8_t y)
-{
-    if(x >= SH1106_DISP_WIDTH)
-        x = SH1106_DISP_WIDTH - 1;
-    
-    if(y >= SH1106_DISP_HEIGHT)
-        y = SH1106_DISP_HEIGHT - 1;
-    
-    buffer[x + BUFFER_WIDTH * (y >> 3) + 1] |= 1 << (y % 8);
-
-    set_page_state(y >> 3, WRITE_PAGE);
-}
-
-void sh1106_set_pixel_off(uint8_t x, uint8_t y)
-{
-    if(x >= SH1106_DISP_WIDTH)
-        x = SH1106_DISP_WIDTH - 1;
-    
-    if(y >= SH1106_DISP_HEIGHT)
-        y = SH1106_DISP_HEIGHT - 1;
-    
-    buffer[x + BUFFER_WIDTH * (y >> 3) + 1] &= ~(1 << (y % 8));
-
-    set_page_state(y >> 3, WRITE_PAGE);
-}
-
 esp_err_t sh1106_set_pixel(uint8_t x, uint8_t y, uint8_t state)
 {
     if(x >= SH1106_DISP_WIDTH || y >= SH1106_DISP_HEIGHT)

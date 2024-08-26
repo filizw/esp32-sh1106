@@ -1,13 +1,13 @@
 #include "sh1106.h"
 
-#define SH1106_I2C_ADDR 0x3C
-#define SH1106_I2C_SCL_SPEED 400000
-
 #define DISP_COL_OFFSET 0x02
 
-#define BUFFER_WIDTH (SH1106_DISP_WIDTH + 1)
-#define BUFFER_HEIGHT (SH1106_DISP_HEIGHT >> 3)
-#define BUFFER_SIZE BUFFER_WIDTH * BUFFER_HEIGHT
+#define MEM_BUF_WIDTH (SH1106_DISP_WIDTH + 1)
+#define MEM_BUF_HEIGHT (SH1106_DISP_HEIGHT >> 3)
+#define MEM_BUF_SIZE MEM_BUF_WIDTH * MEM_BUF_HEIGHT
+
+#define MAX_PAGE_ADDR (MEM_BUF_HEIGHT - 1)
+#define MAX_COL_ADDR (SH1106_DISP_WIDTH - 1)
 
 #define SKIP_PAGE 0x00
 #define WRITE_PAGE 0x40
@@ -221,20 +221,22 @@ const sh1106_font_t sh1106_font8x16 = {
 };
 
 static i2c_master_dev_handle_t i2c_dev_handle = NULL;
-static uint8_t buffer[BUFFER_SIZE] = {0x00};
+static uint8_t mem_buffer[MEM_BUF_SIZE] = {0x00};
+
+static uint8_t disp_start_line = 0x00;
 
 static void set_page_addr(uint8_t addr)
 {
-    if(addr >= BUFFER_HEIGHT)
-        addr = BUFFER_HEIGHT - 1;
+    if(addr > MAX_PAGE_ADDR)
+        addr = MAX_PAGE_ADDR;
 
     sh1106_send_cmd(SH1106_CMD_SET_PAGE_ADDR | (addr & 0x0F));
 }
 
 static void set_col_addr(uint8_t addr)
 {
-    if(addr >= SH1106_DISP_WIDTH)
-        addr = SH1106_DISP_WIDTH - 1;
+    if(addr > MAX_COL_ADDR)
+        addr = MAX_COL_ADDR;
     
     sh1106_send_cmd(SH1106_CMD_SET_LOW_COL_ADDR | (addr & 0x0F));
     sh1106_send_cmd(SH1106_CMD_SET_HIGH_COL_ADDR | ((addr >> 4) & 0x0F));
@@ -242,12 +244,12 @@ static void set_col_addr(uint8_t addr)
 
 static void set_page_state(uint8_t page_addr, uint8_t state)
 {
-    buffer[BUFFER_WIDTH * page_addr] = (state == WRITE_PAGE) ? WRITE_PAGE : SKIP_PAGE;
+    mem_buffer[MEM_BUF_WIDTH * page_addr] = (state == WRITE_PAGE) ? WRITE_PAGE : SKIP_PAGE;
 }
 
 static void write_page(uint8_t page_addr)
 {
-    const uint8_t *write_buffer = buffer + BUFFER_WIDTH * page_addr;
+    const uint8_t *write_buffer = mem_buffer + MEM_BUF_WIDTH * page_addr;
 
     if(write_buffer[0] == WRITE_PAGE)
     {
@@ -255,7 +257,7 @@ static void write_page(uint8_t page_addr)
         set_col_addr(DISP_COL_OFFSET);
 
         sh1106_send_cmd(SH1106_CMD_RMW_START);
-        i2c_master_transmit(i2c_dev_handle, write_buffer, BUFFER_WIDTH, -1);
+        i2c_master_transmit(i2c_dev_handle, write_buffer, MEM_BUF_WIDTH, -1);
         sh1106_send_cmd(SH1106_CMD_RMW_END);
 
         set_page_state(page_addr, SKIP_PAGE);
@@ -330,7 +332,7 @@ void sh1106_set_contrast(uint8_t contrast)
     sh1106_send_double_cmd(SH1106_CMD_SET_CONTRAST, contrast);
 }
 
-void sh1106_inv_x_dir(bool inv)
+void sh1106_inv_x_axis(bool inv)
 {
     if(inv)
         sh1106_send_cmd(SH1106_CMD_SET_SEG_REMAP | 1);
@@ -338,7 +340,7 @@ void sh1106_inv_x_dir(bool inv)
         sh1106_send_cmd(SH1106_CMD_SET_SEG_REMAP);
 }
 
-void sh1106_inv_y_dir(bool inv)
+void sh1106_inv_y_axis(bool inv)
 {
     if(inv)
         sh1106_send_cmd(SH1106_CMD_SET_COM_SCAN_DIR | 8);
@@ -354,17 +356,25 @@ void sh1106_reverse(bool rev)
         sh1106_send_cmd(SH1106_CMD_NORMAL_DISP);
 }
 
+void sh1106_scroll(int8_t step)
+{
+    disp_start_line -= step;
+    disp_start_line %= SH1106_DISP_HEIGHT;
+
+    sh1106_send_cmd(SH1106_CMD_SET_START_LINE | disp_start_line);
+}
+
 void sh1106_display(void)
 {
-    for(uint8_t page_addr = 0; page_addr < BUFFER_HEIGHT; page_addr++)
+    for(uint8_t page_addr = 0; page_addr <= MAX_PAGE_ADDR; page_addr++)
         write_page(page_addr);
 }
 
 void sh1106_clear(void)
 {
-    for(uint8_t page_addr = 0; page_addr < BUFFER_HEIGHT; page_addr++)
+    for(uint8_t page_addr = 0; page_addr <= MAX_PAGE_ADDR; page_addr++)
     {
-        memset(buffer + BUFFER_WIDTH * page_addr + 1, 0x00, SH1106_DISP_WIDTH);
+        memset(mem_buffer + MEM_BUF_WIDTH * page_addr + 1, 0x00, SH1106_DISP_WIDTH);
         set_page_state(page_addr, WRITE_PAGE);
     }
 }
@@ -374,19 +384,19 @@ esp_err_t sh1106_set_pixel(uint8_t x, uint8_t y, uint8_t state)
     if(x >= SH1106_DISP_WIDTH || y >= SH1106_DISP_HEIGHT)
         return ESP_ERR_INVALID_ARG;
     
-    uint8_t addr = x + BUFFER_WIDTH * (y >> 3) + 1;
+    uint8_t addr = x + MEM_BUF_WIDTH * (y >> 3) + 1;
     uint8_t mask = 1 << (y % 8);
     
     switch (state)
     {
     case SH1106_PIXEL_OFF:
-        buffer[addr] &= ~mask;
+        mem_buffer[addr] &= ~mask;
         break;
     case SH1106_PIXEL_ON:
-        buffer[addr] |= mask;
+        mem_buffer[addr] |= mask;
         break;
     case SH1106_PIXEL_INV:
-        buffer[addr] ^= mask;
+        mem_buffer[addr] ^= mask;
         break;
     }
 
@@ -395,55 +405,79 @@ esp_err_t sh1106_set_pixel(uint8_t x, uint8_t y, uint8_t state)
     return ESP_OK;
 }
 
-esp_err_t sh1106_write_char(uint8_t x, uint8_t y, char c, const sh1106_font_t *const font)
+esp_err_t sh1106_write_data(uint8_t x, uint8_t y, const uint8_t *const data, uint8_t cols, uint8_t pages)
 {
-    if(font == NULL || x >= SH1106_DISP_WIDTH || y >= SH1106_DISP_HEIGHT)
+    if(data == NULL || x >= SH1106_DISP_WIDTH || y >= SH1106_DISP_HEIGHT)
         return ESP_ERR_INVALID_ARG;
     
-    if(c < 32 || c > 126)
-        c = 32;
-
     uint8_t page_addr = y >> 3;
     uint8_t page_offset = y % 8;
     bool add_page = (page_offset == 0) ? false : true;
 
-    const uint8_t num_of_font_pages = (font->height >> 3) + (font->height % 8 == 0 ? 0 : 1);
-    const uint8_t num_of_font_cols = font->width;
-
-    uint8_t num_of_pages = num_of_font_pages + (add_page ? 1 : 0);
-    if(page_addr + num_of_pages > BUFFER_HEIGHT)
+    uint8_t max_cols = cols;
+    if(x + max_cols - 1 > MAX_COL_ADDR)
+        max_cols -= x + max_cols - MAX_COL_ADDR - 1;
+    
+    uint8_t max_pages = pages + (add_page ? 1 : 0);
+    if(page_addr + max_pages - 1 > MAX_PAGE_ADDR)
     {
-        num_of_pages -= page_addr + num_of_pages - BUFFER_HEIGHT;
+        max_pages -= page_addr + max_pages - MAX_PAGE_ADDR - 1;
         add_page = false;
     }
 
-    uint8_t num_of_cols = font->width;
-    if(x + num_of_cols > SH1106_DISP_WIDTH)
-        num_of_cols -= x + num_of_cols - SH1106_DISP_WIDTH;
-
-    uint8_t *data = calloc(num_of_cols, sizeof(uint8_t));
-    uint8_t byte;
-
-    for(uint8_t page = 0; page < num_of_pages; page++)
+    if(page_offset == 0)
     {
-        for(uint8_t col = 0; col < num_of_cols; col++)
+        for(uint8_t page = 0; page < max_pages; page++)
         {
-            if(page == (num_of_pages - 1) && add_page)
-                byte = font->data[col + num_of_font_cols*((c - 32)*num_of_font_pages + page - 1)] >> (8 - page_offset);
-            else
-                byte = font->data[col + num_of_font_cols*((c - 32)*num_of_font_pages + page)] << page_offset;
-            
-            data[col] = buffer[x + col + BUFFER_WIDTH * page_addr + 1] | byte;
+            memcpy(mem_buffer + x + MEM_BUF_WIDTH * page_addr + 1, data + cols * page, max_cols);
+            set_page_state(page_addr, WRITE_PAGE);
+            page_addr++;
+        }
+    }
+    else
+    {
+        uint8_t *write_buffer = calloc(max_cols, sizeof(uint8_t));
+        uint8_t byte;
+
+        for(uint8_t page = 0; page < max_pages; page++)
+        {
+            for(uint8_t col = 0; col < max_cols; col++)
+            {
+                byte = 0x00;
+
+                if(page < (max_pages - 1))
+                    byte |= data[col + cols * page] << page_offset;
+
+                if(page > 0)
+                    byte |= data[col + cols * (page - 1)] >> (8 - page_offset);
+                
+                write_buffer[col] = mem_buffer[x + col + MEM_BUF_WIDTH * page_addr + 1] | byte;
+            }
+
+            memcpy(mem_buffer + x + MEM_BUF_WIDTH * page_addr + 1, write_buffer, max_cols);
+            set_page_state(page_addr, WRITE_PAGE);
+            page_addr++;
         }
 
-        memcpy(buffer + x + BUFFER_WIDTH * page_addr + 1, data, num_of_cols);
-        set_page_state(page_addr, WRITE_PAGE);
-        page_addr++;
+        free(write_buffer);
     }
 
-    free(data);
-
     return ESP_OK;
+}
+
+esp_err_t sh1106_write_char(uint8_t x, uint8_t y, char c, const sh1106_font_t *const font)
+{
+    if(font == NULL)
+        return ESP_ERR_INVALID_ARG;
+
+    if(c < 32 || c > 126)
+        c = 32;
+    
+    uint8_t pages = (font->height >> 3) + (font->height % 8 == 0 ? 0 : 1);
+
+    const uint8_t *const data = font->data + font->width * (c - 32) * pages;
+
+    return sh1106_write_data(x, y, data, font->width, pages);
 }
 
 esp_err_t sh1106_write_text(uint8_t x, uint8_t y, const char *text, const sh1106_font_t *const font)

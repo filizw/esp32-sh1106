@@ -4,6 +4,10 @@
 #include "freertos/task.h"
 #include <string.h>
 
+// I2C
+#define SH1106_I2C_ADDR 0x3C
+#define SH1106_I2C_SCL_SPEED 400000
+
 // commands
 #define SH1106_CMD_SET_LOW_COL_ADDR 0x00
 #define SH1106_CMD_SET_HIGH_COL_ADDR 0x10
@@ -64,17 +68,21 @@ void sh1106_display_off(void);
 
 void sh1106_set_contrast(uint8_t contrast);
 
-void sh1106_inv_x_dir(bool inv);
+void sh1106_inv_x_axis(bool inv);
 
-void sh1106_inv_y_dir(bool inv);
+void sh1106_inv_y_axis(bool inv);
 
 void sh1106_reverse(bool rev);
+
+void sh1106_scroll(int8_t step);
 
 void sh1106_display(void);
 
 void sh1106_clear(void);
 
 esp_err_t sh1106_set_pixel(uint8_t x, uint8_t y, uint8_t state);
+
+esp_err_t sh1106_write_data(uint8_t x, uint8_t y, const uint8_t *const data, uint8_t cols, uint8_t pages);
 
 esp_err_t sh1106_write_char(uint8_t x, uint8_t y, char c, const sh1106_font_t *const font);
 

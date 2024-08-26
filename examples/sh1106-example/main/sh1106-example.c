@@ -21,15 +21,19 @@ void app_main(void)
     i2c_new_master_bus(&i2c_bus_config, &i2c_bus_handle);
 
     sh1106_init(i2c_bus_handle);
-    sh1106_inv_x_dir(true);
-    sh1106_inv_y_dir(true);
+    sh1106_inv_x_axis(true);
+    sh1106_inv_y_axis(true);
     sh1106_clear();
 
-    sh1106_write_text(10, 16, "HELLO WORLD!", &sh1106_font8x16);
-    sh1106_write_text(50, 40, "(-_-)", &sh1106_font5x7);
+    sh1106_write_text(10, 18, "HELLO WORLD!", &sh1106_font8x16);
+
+    uint8_t data[10 * 2];
+    memset(data, 0xFF, 20);
+    sh1106_write_data(50, 43, data, 10, 2);
     sh1106_display();
 
     bool rev = false;
+    int8_t step = 2;
 
     while(true)
     {
@@ -45,7 +49,11 @@ void app_main(void)
             sh1106_display();
 
             vTaskDelay(pdMS_TO_TICKS(100));
+
+            sh1106_scroll(step);
         }
+
+        step *= -1;
 
         rev = !rev;
         sh1106_reverse(rev);
